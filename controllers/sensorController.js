@@ -4,6 +4,7 @@ const pool = require('../config/db'); // Import the PostgreSQL connection pool
 
 /**
  * Fetches the latest sensor data and historical data from the database.
+ * (EXISTING FUNCTION - NO CHANGES HERE)
  * @param {number} intervalHours - The number of hours for historical data.
  * @returns {Promise<object>} An object containing current metrics and historical data arrays.
  */
@@ -25,8 +26,6 @@ exports.getSensorData = async (intervalHours) => {
     const latestMetrics = latestResult.rows[0] || {}; // Handle case where no data exists
 
     // 2. Fetch historical data for the specified interval
-    // Adjust the WHERE clause to fetch data within the last 'intervalHours'
-    // Ensure the timestamp is formatted as an ISO string for consistency with frontend
     const historicalQueryBase = (column) => `
       SELECT
         timestamp,
@@ -67,5 +66,29 @@ exports.getSensorData = async (intervalHours) => {
   } catch (error) {
     console.error('Error fetching sensor data from database:', error);
     throw new Error('Failed to retrieve sensor data.'); // Propagate error for route handler
+  }
+};
+
+// --- NEW FUNCTION FOR SPECIFIC AVERAGE POWER CONSUMPTION ---
+/**
+ * Fetches the average instantaneous power consumption over a specific period.
+ * @param {number} periodMinutes - The number of minutes for the average calculation.
+ * @returns {Promise<number>} The calculated average power.
+ */
+exports.getSpecificAveragePower = async (periodMinutes) => {
+  try {
+    const avgPowerQuery = `
+      SELECT
+        AVG(inst_power_val) AS average_power
+      FROM sensor_data
+      WHERE timestamp >= NOW() - INTERVAL '${periodMinutes} minutes';
+    `;
+    const result = await pool.query(avgPowerQuery);
+
+    // Return the average, defaulting to 0 if no data or null average
+    return parseFloat(result.rows[0]?.average_power || '0');
+  } catch (error) {
+    console.error(`Error fetching average power for ${periodMinutes} minutes:`, error);
+    throw new Error('Failed to retrieve specific average power data.');
   }
 };
