@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PowerSense Cloud</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> <!-- Chart.js Library -->
+    <title>PowerSense Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             background-color: #121212; color: #fff; font-family: 'Segoe UI', sans-serif;
@@ -30,7 +30,7 @@
 
         /* Chart Container */
         .chart-container {
-            width: 340px; background: #1e1e1e; padding: 15px; border-radius: 15px;
+            width: 90%; max-width: 600px; background: #1e1e1e; padding: 15px; border-radius: 15px;
         }
         
         /* Switch CSS */
@@ -94,14 +94,16 @@
         const liveChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: [], // Time
+                labels: [], 
                 datasets: [
-                    { label: 'Relay 1', data: [], borderColor: '#00e676', stepped: true, tension: 0.1 },
-                    { label: 'Relay 2', data: [], borderColor: '#29b6f6', stepped: true, tension: 0.1 }
+                    { label: 'Relay 1', data: [], borderColor: '#00e676', stepped: true, tension: 0.1, pointRadius: 0 },
+                    { label: 'Relay 2', data: [], borderColor: '#29b6f6', stepped: true, tension: 0.1, pointRadius: 0 }
                 ]
             },
             options: {
                 responsive: true,
+                animation: false,
+                interaction: { intersect: false },
                 scales: {
                     x: { ticks: { color: '#888' }, grid: { color: '#333' } },
                     y: { 
@@ -138,6 +140,7 @@
             if (isInteracting) return;
 
             try {
+                // Fetch from the same domain (relative path)
                 const res = await fetch('/api/status');
                 const json = await res.json();
 
@@ -173,13 +176,12 @@
             const now = new Date();
             const timeLabel = now.getHours() + ':' + now.getMinutes() + ':' + now.getSeconds();
 
-            // Add new data point
             liveChart.data.labels.push(timeLabel);
             liveChart.data.datasets[0].data.push(r1State ? 1 : 0);
             liveChart.data.datasets[1].data.push(r2State ? 1 : 0);
 
-            // Keep only last 20 points to prevent overcrowding
-            if (liveChart.data.labels.length > 20) {
+            // Keep only last 30 points
+            if (liveChart.data.labels.length > 30) {
                 liveChart.data.labels.shift();
                 liveChart.data.datasets[0].data.shift();
                 liveChart.data.datasets[1].data.shift();
