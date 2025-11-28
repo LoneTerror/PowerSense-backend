@@ -63,16 +63,24 @@
         .timer { font-family: 'Courier New', monospace; font-size: 0.9rem; color: #00e676; transition: opacity 0.3s; }
         .timer.hidden { display: none; }
 
-        /* Chart Container */
+        /* Chart Wrapper (The Outer Box) */
         .chart-wrapper {
             width: 100%; max-width: 600px; 
             max-height: 0; opacity: 0; overflow: hidden;
-            transition: max-height 0.6s ease-out, opacity 0.4s ease-in;
-            border-radius: 15px; background: #1e1e1e; margin-top: 10px;
+            transition: max-height 0.6s ease-out, opacity 0.4s ease-in, margin 0.4s;
+            border-radius: 15px; background: #1e1e1e; margin-top: 0;
         }
         .chart-wrapper.visible {
             max-height: 500px; opacity: 1; padding: 15px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            margin-top: 10px;
+        }
+        
+        /* The Canvas Container (Crucial for Chart.js Sizing) */
+        .canvas-container {
+            position: relative;
+            height: 300px; /* Force explicit height so it doesn't collapse */
+            width: 100%;
         }
         
         /* Log List Styles */
@@ -149,8 +157,10 @@
             </div>
 
             <!-- Live Graph Container -->
-            <div id="chartContainer" class="chart-wrapper">
-                <canvas id="liveChart"></canvas>
+            <div id="chartWrapper" class="chart-wrapper">
+                <div class="canvas-container">
+                    <canvas id="liveChart"></canvas>
+                </div>
             </div>
         </div>
 
@@ -168,15 +178,14 @@
         const API_BASE = "https://backend.powersense.site";
 
         const statusMsg = document.getElementById('statusMsg');
-        const chartContainer = document.getElementById('chartContainer');
+        const chartWrapper = document.getElementById('chartWrapper');
         const logList = document.getElementById('logList');
         
         let isInteracting = false;
         let r1Start = null;
         let r2Start = null;
         
-        // Track previous state to detect edges (ON->OFF)
-        let prevR1State = null; // Start null so we don't log on first load
+        let prevR1State = null;
         let prevR2State = null; 
 
         // --- CHART SETUP ---
@@ -192,7 +201,7 @@
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: false,
+                maintainAspectRatio: false, // Important: Allows chart to fit our custom height
                 animation: false,
                 interaction: { intersect: false },
                 scales: {
@@ -228,7 +237,6 @@
         }
 
         function logAction(device, action) {
-            // Remove "Waiting..." placeholder if it exists
             if (logList.firstElementChild && logList.firstElementChild.innerText.includes("Waiting")) {
                 logList.innerHTML = '';
             }
@@ -245,13 +253,11 @@
                 <span class="time">${timeString}</span>
             `;
             
-            // Insert at the top
             logList.insertBefore(li, logList.firstChild);
         }
 
         async function syncState() {
             try {
-                // Use absolute URL to fix "Failed to parse URL" error
                 const res = await fetch(`${API_BASE}/api/status`);
                 const json = await res.json();
 
@@ -263,7 +269,6 @@
                     statusMsg.style.color = "#ff4444";
                 }
 
-                // 1. Update Checkboxes (Only if user isn't holding them)
                 if (!isInteracting) {
                     const r1El = document.getElementById('r1');
                     const r2El = document.getElementById('r2');
@@ -271,25 +276,20 @@
                     if (r2El.checked !== json.data.r2) r2El.checked = json.data.r2;
                 }
 
-                // 2. Logic for Logging
-                // Relay 1 Logic
                 if (prevR1State !== null) {
                     if (!prevR1State && json.data.r1) logAction("Living Room", "turned on");
                     if (prevR1State && !json.data.r1) logAction("Living Room", "turned off");
                 }
-                // Relay 2 Logic
                 if (prevR2State !== null) {
                     if (!prevR2State && json.data.r2) logAction("Bedroom", "turned on");
                     if (prevR2State && !json.data.r2) logAction("Bedroom", "turned off");
                 }
 
-                // 3. Update internal state
                 r1Start = json.data.r1Start;
                 r2Start = json.data.r2Start;
                 prevR1State = json.data.r1;
                 prevR2State = json.data.r2;
 
-                // 4. Update Graph
                 updateChartVisibility(json.data.r1, json.data.r2);
                 updateGraph(json.data.r1, json.data.r2);
 
@@ -302,9 +302,9 @@
 
         function updateChartVisibility(r1State, r2State) {
             if (r1State || r2State) {
-                chartContainer.classList.add('visible');
+                chartWrapper.classList.add('visible');
             } else {
-                chartContainer.classList.remove('visible');
+                chartWrapper.classList.remove('visible');
             }
         }
 
@@ -316,7 +316,6 @@
             liveChart.data.datasets[0].data.push(r1State ? 1 : 0);
             liveChart.data.datasets[1].data.push(r2State ? 1 : 0);
 
-            // Keep graph rolling window size appropriate
             if (liveChart.data.labels.length > 20) {
                 liveChart.data.labels.shift();
                 liveChart.data.datasets[0].data.shift();
@@ -329,13 +328,11 @@
             isInteracting = true;
             const action = el.checked ? 'on' : 'off';
             
-            // Immediate visual update for graph visibility check
             const r1 = document.getElementById('r1').checked;
             const r2 = document.getElementById('r2').checked;
             updateChartVisibility(r1, r2);
 
             try {
-                // Use absolute URL here as well
                 const res = await fetch(`${API_BASE}/api/relay/${id}/${action}`);
                 const json = await res.json();
                 if (!json.success) {
@@ -345,7 +342,6 @@
             } catch (e) {
                 el.checked = !el.checked;
             } finally {
-                // Release interaction lock after a short delay
                 setTimeout(() => { isInteracting = false; }, 500);
             }
         }
