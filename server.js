@@ -9,47 +9,42 @@ require('dotenv').config();
 const sensorRoutes = require('./routes/sensor'); 
 
 const app = express();
-// Updated Port Logic: Uses process.env.PORT or defaults to 5003
+// Uses .env PORT or defaults to 5003
 const PORT = process.env.PORT || 5003; 
 
 // ==========================================
-//  CORS CONFIGURATION
+//  CORS CONFIGURATION (FIXED)
 // ==========================================
-// Allow your main domain and localhost
-const allowedOrigins = [
-    'https://backend.powersense.site', 
-    'https://relay.backend.site',      // Kept just in case you still use this frontend
-    `http://localhost:${PORT}`
-];
-
+// origin: true -> Reflects the request origin (Allows all domains dynamically)
+// credentials: true -> Allows cookies/auth headers
 app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
-        }
-        return callback(null, true);
-    },
+    origin: true, 
     credentials: true 
 }));
 
 app.use(express.json()); 
-app.use(express.static('public')); // Serves the Relay Dashboard UI
+app.use(express.static('public')); 
+
+// --- DEBUG LOGGER ---
+// This will print every request origin to the console so you can see who is connecting
+app.use((req, res, next) => {
+    const origin = req.headers.origin || req.headers.host || 'Unknown';
+    console.log(`[Req] ${req.method} ${req.url} | Origin: ${origin}`);
+    next();
+});
 
 // ==========================================
-//  SERVER SETUP (Single Instance)
+//  SERVER SETUP
 // ==========================================
 const server = http.createServer(app);
 
-// Attach WebSocket to the SAME server instance
+// Attach WebSocket to the server
 const wss = new WebSocket.Server({ server });
 
 // ==========================================
 //  WEBSOCKET & RELAY LOGIC
 // ==========================================
 
-// State Management
 let espSocket = null; 
 let deviceStatus = { 
     r1: false, 
@@ -58,7 +53,7 @@ let deviceStatus = {
     r2Start: null
 };
 
-// Heartbeat System
+// Heartbeat System (Keeps connection alive)
 const interval = setInterval(function ping() {
     wss.clients.forEach(function each(ws) {
         if (ws.isAlive === false) {
@@ -82,9 +77,6 @@ wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
-    // In a single-port setup, regular browser clients might try to connect via WS too.
-    // We assume the ESP is the one sending "STATUS" messages.
-    // You could add a simple auth check here if needed.
     espSocket = ws;
 
     ws.on('message', (message) => {
@@ -99,7 +91,7 @@ wss.on('connection', (ws, req) => {
                     deviceStatus.r2 = data.r2;
                     deviceStatus.r2Start = data.r2 ? Date.now() : null;
                 }
-                console.log(`[Sync] Relay State: R1=${data.r1}, R2=${data.r2}`);
+                // console.log(`[Sync] Relay State: R1=${data.r1}, R2=${data.r2}`);
             }
         } catch (e) { console.error(`[Error] Bad JSON from ESP`); }
     });
@@ -152,9 +144,8 @@ app.get('/api/relay/:id/:action', (req, res) => {
     }
 });
 
-// Basic Test Route
 app.get('/', (req, res) => {
-    res.send('PowerSense Unified Backend is running!');
+    res.send('PowerSense Unified Backend is Online!');
 });
 
 // ==========================================
