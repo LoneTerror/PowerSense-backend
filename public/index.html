@@ -90,6 +90,8 @@
             animation: fadeIn 0.5s;
         }
         .log-item span.device { color: #00e676; font-weight: bold; }
+        .log-item span.action-on { color: #00e676; }
+        .log-item span.action-off { color: #ff5252; }
         .log-item span.time { color: #888; font-size: 0.8rem; display: block; margin-top: 4px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -156,7 +158,6 @@
         <div class="right-column">
             <h3>Activity History</h3>
             <ul id="logList" class="log-list">
-                <!-- Logs will appear here -->
                 <li class="log-item" style="text-align: center; color: #555; border: none;">Waiting for activity...</li>
             </ul>
         </div>
@@ -171,13 +172,12 @@
         const logList = document.getElementById('logList');
         
         let isInteracting = false;
-        // We store the 'Start' times locally to calculate duration when they turn OFF
         let r1Start = null;
         let r2Start = null;
+        
         // Track previous state to detect edges (ON->OFF)
-        let prevR1State = false;
-        let prevR2State = false;
-        let isFirstLoad = true;
+        let prevR1State = null; // Start null so we don't log on first load
+        let prevR2State = null; 
 
         // --- CHART SETUP ---
         const ctx = document.getElementById('liveChart').getContext('2d');
@@ -186,8 +186,8 @@
             data: {
                 labels: [], 
                 datasets: [
-                    { label: 'Living Room', data: [], borderColor: '#00e676', stepped: true, tension: 0.1, pointRadius: 0, borderWidth: 2 },
-                    { label: 'Bedroom', data: [], borderColor: '#29b6f6', stepped: true, tension: 0.1, pointRadius: 0, borderWidth: 2 }
+                    { label: 'Living Room', data: [], borderColor: '#00e676', backgroundColor: '#00e676', stepped: 'before', tension: 0, pointRadius: 0, borderWidth: 2 },
+                    { label: 'Bedroom', data: [], borderColor: '#29b6f6', backgroundColor: '#29b6f6', stepped: 'before', tension: 0, pointRadius: 0, borderWidth: 2 }
                 ]
             },
             options: {
@@ -227,15 +227,7 @@
             el.innerText = `${h}:${m}:${s}`;
         }
 
-        function formatDuration(ms) {
-            const seconds = Math.floor(ms / 1000);
-            if (seconds < 60) return `${seconds}s`;
-            const minutes = Math.floor(seconds / 60);
-            const remSec = seconds % 60;
-            return `${minutes}m ${remSec}s`;
-        }
-
-        function addLogEntry(device, durationMs) {
+        function logAction(device, action) {
             // Remove "Waiting..." placeholder if it exists
             if (logList.firstElementChild && logList.firstElementChild.innerText.includes("Waiting")) {
                 logList.innerHTML = '';
@@ -246,10 +238,11 @@
             
             const now = new Date();
             const timeString = now.toLocaleTimeString();
+            const actionClass = action === "turned on" ? "action-on" : "action-off";
 
             li.innerHTML = `
-                <span class="device">${device}</span> ran for <b>${formatDuration(durationMs)}</b>
-                <span class="time">Ended at ${timeString}</span>
+                <span class="device">${device}</span> <span class="${actionClass}">${action}</span>
+                <span class="time">${timeString}</span>
             `;
             
             // Insert at the top
@@ -257,10 +250,8 @@
         }
 
         async function syncState() {
-            if (isInteracting) return;
-
             try {
-                // Use absolute URL to fix "Failed to parse URL" error in previews
+                // Use absolute URL to fix "Failed to parse URL" error
                 const res = await fetch(`${API_BASE}/api/status`);
                 const json = await res.json();
 
@@ -272,43 +263,34 @@
                     statusMsg.style.color = "#ff4444";
                 }
 
-                // Update Checkboxes
-                const r1El = document.getElementById('r1');
-                const r2El = document.getElementById('r2');
-                if (r1El.checked !== json.data.r1) r1El.checked = json.data.r1;
-                if (r2El.checked !== json.data.r2) r2El.checked = json.data.r2;
-
-                // --- HISTORY LOGGING LOGIC ---
-                // We detect if state changed from TRUE to FALSE
-                if (!isFirstLoad) {
-                    // Check Relay 1 (Living Room)
-                    if (prevR1State === true && json.data.r1 === false) {
-                        // It turned OFF. Calculate how long it was ON.
-                        if (r1Start) {
-                            const duration = Date.now() - r1Start;
-                            addLogEntry("Living Room", duration);
-                        }
-                    }
-                    // Check Relay 2 (Bedroom)
-                    if (prevR2State === true && json.data.r2 === false) {
-                        if (r2Start) {
-                            const duration = Date.now() - r2Start;
-                            addLogEntry("Bedroom", duration);
-                        }
-                    }
+                // 1. Update Checkboxes (Only if user isn't holding them)
+                if (!isInteracting) {
+                    const r1El = document.getElementById('r1');
+                    const r2El = document.getElementById('r2');
+                    if (r1El.checked !== json.data.r1) r1El.checked = json.data.r1;
+                    if (r2El.checked !== json.data.r2) r2El.checked = json.data.r2;
                 }
 
-                // Update Local State Variables
+                // 2. Logic for Logging
+                // Relay 1 Logic
+                if (prevR1State !== null) {
+                    if (!prevR1State && json.data.r1) logAction("Living Room", "turned on");
+                    if (prevR1State && !json.data.r1) logAction("Living Room", "turned off");
+                }
+                // Relay 2 Logic
+                if (prevR2State !== null) {
+                    if (!prevR2State && json.data.r2) logAction("Bedroom", "turned on");
+                    if (prevR2State && !json.data.r2) logAction("Bedroom", "turned off");
+                }
+
+                // 3. Update internal state
                 r1Start = json.data.r1Start;
                 r2Start = json.data.r2Start;
                 prevR1State = json.data.r1;
                 prevR2State = json.data.r2;
-                isFirstLoad = false;
 
-                // Handle Graph Visibility
+                // 4. Update Graph
                 updateChartVisibility(json.data.r1, json.data.r2);
-
-                // Update Graph Data
                 updateGraph(json.data.r1, json.data.r2);
 
             } catch (e) {
@@ -334,7 +316,8 @@
             liveChart.data.datasets[0].data.push(r1State ? 1 : 0);
             liveChart.data.datasets[1].data.push(r2State ? 1 : 0);
 
-            if (liveChart.data.labels.length > 30) {
+            // Keep graph rolling window size appropriate
+            if (liveChart.data.labels.length > 20) {
                 liveChart.data.labels.shift();
                 liveChart.data.datasets[0].data.shift();
                 liveChart.data.datasets[1].data.shift();
@@ -346,6 +329,7 @@
             isInteracting = true;
             const action = el.checked ? 'on' : 'off';
             
+            // Immediate visual update for graph visibility check
             const r1 = document.getElementById('r1').checked;
             const r2 = document.getElementById('r2').checked;
             updateChartVisibility(r1, r2);
@@ -361,6 +345,7 @@
             } catch (e) {
                 el.checked = !el.checked;
             } finally {
+                // Release interaction lock after a short delay
                 setTimeout(() => { isInteracting = false; }, 500);
             }
         }
