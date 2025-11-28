@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 5003; 
 
 // ==========================================
-//  CORS CONFIGURATION (FIXED)
+//  CORS CONFIGURATION
 // ==========================================
 // origin: true -> Reflects the request origin (Allows all domains dynamically)
 // credentials: true -> Allows cookies/auth headers
