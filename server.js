@@ -2,21 +2,18 @@
 
 const express = require('express');
 const cors = require('cors');
-const http = require('http');           // Required for WebSocket
-const WebSocket = require('ws');        // WebSocket library
+const http = require('http');           
+const WebSocket = require('ws');        
 require('dotenv').config();
 
 const sensorRoutes = require('./routes/sensor'); 
 
 const app = express();
-// Uses .env PORT or defaults to 5003
 const PORT = process.env.PORT || 5003; 
 
 // ==========================================
 //  CORS CONFIGURATION
 // ==========================================
-// origin: true -> Reflects the request origin (Allows all domains dynamically)
-// credentials: true -> Allows cookies/auth headers
 app.use(cors({
     origin: true, 
     credentials: true 
@@ -25,8 +22,6 @@ app.use(cors({
 app.use(express.json()); 
 app.use(express.static('public')); 
 
-// --- DEBUG LOGGER ---
-// This will print every request origin to the console so you can see who is connecting
 app.use((req, res, next) => {
     const origin = req.headers.origin || req.headers.host || 'Unknown';
     console.log(`[Req] ${req.method} ${req.url} | Origin: ${origin}`);
@@ -37,8 +32,6 @@ app.use((req, res, next) => {
 //  SERVER SETUP
 // ==========================================
 const server = http.createServer(app);
-
-// Attach WebSocket to the server
 const wss = new WebSocket.Server({ server });
 
 // ==========================================
@@ -53,13 +46,26 @@ let deviceStatus = {
     r2Start: null
 };
 
-// Heartbeat System (Keeps connection alive)
+// --- BROADCAST FUNCTION (New) ---
+// Sends the latest status to all connected web/react clients
+function broadcastStatus() {
+    const payload = JSON.stringify({
+        type: 'STATUS_UPDATE',
+        data: deviceStatus
+    });
+
+    wss.clients.forEach(client => {
+        // Don't send to the ESP itself, only to browsers/apps
+        if (client !== espSocket && client.readyState === WebSocket.OPEN) {
+            client.send(payload);
+        }
+    });
+}
+
+// Heartbeat System
 const interval = setInterval(function ping() {
     wss.clients.forEach(function each(ws) {
-        if (ws.isAlive === false) {
-            console.log('[Heartbeat] Client dead, terminating.');
-            return ws.terminate();
-        }
+        if (ws.isAlive === false) return ws.terminate();
         ws.isAlive = false;
         ws.ping();
     });
@@ -77,28 +83,46 @@ wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
-    espSocket = ws;
+    // Identify if this is the ESP8266 or a Web Client
+    // Simple heuristic: ESP usually doesn't send browser headers, or you can add a protocol check
+    // For now, we assume the first message identifies it, or we treat the one sending 'STATUS' updates as ESP.
+    
+    // Send current status immediately to new web clients
+    ws.send(JSON.stringify({ type: 'STATUS_UPDATE', data: deviceStatus }));
 
     ws.on('message', (message) => {
         try {
-            const data = JSON.parse(message.toString());
+            const msgStr = message.toString();
+            // console.log(`[WS Msg] ${msgStr}`);
+            const data = JSON.parse(msgStr);
+
+            // 1. If message is from ESP (Status Report)
             if (data.type === 'STATUS') {
+                espSocket = ws; // Register this connection as the ESP
+                
+                let changed = false;
                 if (data.r1 !== deviceStatus.r1) {
                     deviceStatus.r1 = data.r1;
                     deviceStatus.r1Start = data.r1 ? Date.now() : null;
+                    changed = true;
                 }
                 if (data.r2 !== deviceStatus.r2) {
                     deviceStatus.r2 = data.r2;
                     deviceStatus.r2Start = data.r2 ? Date.now() : null;
+                    changed = true;
                 }
-                // console.log(`[Sync] Relay State: R1=${data.r1}, R2=${data.r2}`);
+                
+                // If ESP reports a change, tell React Frontend!
+                if (changed) broadcastStatus();
             }
-        } catch (e) { console.error(`[Error] Bad JSON from ESP`); }
+        } catch (e) { console.error(`[Error] Bad JSON or Logic: ${e.message}`); }
     });
 
     ws.on('close', () => {
-        console.log('[WebSocket] Device Disconnected');
-        if (espSocket === ws) espSocket = null;
+        if (espSocket === ws) {
+            console.log('[WebSocket] ESP8266 Disconnected');
+            espSocket = null;
+        }
     });
 });
 
@@ -106,51 +130,74 @@ wss.on('connection', (ws, req) => {
 //  API ROUTES
 // ==========================================
 
-// 1. Sensor Routes
 app.use('/api', sensorRoutes);
 
-// 2. Relay Control Routes
+// 2. Legacy Relay Status
 app.get('/api/status', (req, res) => {
-    if (!espSocket) {
-        return res.status(200).json({ online: false, data: deviceStatus });
-    }
-    res.json({ online: true, data: deviceStatus });
+    // Return status even if ESP is offline, so UI doesn't break
+    res.json({ online: !!espSocket, data: deviceStatus });
 });
 
+// 3. Legacy Web Control (GET)
 app.get('/api/relay/:id/:action', (req, res) => {
     const { id, action } = req.params;
+    handleRelayCommand(id, action === 'on', res);
+});
 
+// 4. ANDROID APP COMPATIBILITY (POST)
+app.post('/api/relays/:id/toggle', (req, res) => {
+    const { id } = req.params;
+    const { state } = req.body; 
+
+    if (typeof state !== 'boolean') {
+        return res.status(400).json({ error: "Invalid body. Expected { state: boolean }" });
+    }
+    
+    handleRelayCommand(id, state, res);
+});
+
+// --- Central Command Handler ---
+function handleRelayCommand(id, state, res) {
     if (!espSocket) return res.status(503).json({ error: "Device Offline" });
 
-    const state = action === 'on';
-    const command = { type: 'COMMAND', relay: parseInt(id), state: state };
+    let targetRelay = parseInt(id); 
+    if (isNaN(targetRelay)) {
+        console.warn(`[API] Warning: Received non-numeric Relay ID: ${id}`);
+        // If your React app uses strings like "light1", map them here
+    }
+
+    const command = { type: 'COMMAND', relay: targetRelay, state: state };
 
     try {
         espSocket.send(JSON.stringify(command));
         
         // Optimistic Update
-        if (id === '1') {
+        let changed = false;
+        if (id == '1' && deviceStatus.r1 !== state) {
             deviceStatus.r1 = state;
             deviceStatus.r1Start = state ? Date.now() : null;
+            changed = true;
         }
-        if (id === '2') {
+        if (id == '2' && deviceStatus.r2 !== state) {
             deviceStatus.r2 = state;
             deviceStatus.r2Start = state ? Date.now() : null;
+            changed = true;
         }
 
-        res.json({ success: true });
+        // Notify React Frontend of the change triggered by Android/API
+        if (changed) broadcastStatus();
+
+        res.json({ success: true, newState: state });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: "Transmission Failed" });
     }
-});
+}
 
 app.get('/', (req, res) => {
     res.send('PowerSense Unified Backend is Online!');
 });
 
-// ==========================================
-//  START SERVER
-// ==========================================
 server.listen(PORT, () => {
     console.log(`PowerSense Backend running on port ${PORT}`);
 });

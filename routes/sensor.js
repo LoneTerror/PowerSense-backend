@@ -1,48 +1,59 @@
 // backend/routes/sensor.js
 
 const express = require('express');
-const sensorController = require('../controllers/sensorController'); // Import the controller
+const sensorController = require('../controllers/sensorController'); 
 const router = express.Router();
 
-// GET /api/sensor-data (EXISTING ROUTE - NO CHANGES HERE)
-// Fetches the latest and historical sensor data.
-// Query parameter: interval (optional, default: 24 hours)
+// GET /api/sensor-data (Web Dashboard)
 router.get('/sensor-data', async (req, res) => {
-  const intervalHours = parseInt(req.query.interval || '24', 10); // Default to 24 hours if not provided
-
-  // Validate intervalHours if necessary
+  const intervalHours = parseInt(req.query.interval || '24', 10);
   if (isNaN(intervalHours) || intervalHours <= 0) {
-    return res.status(400).json({ message: 'Invalid interval parameter. Must be a positive number.' });
+    return res.status(400).json({ message: 'Invalid interval parameter.' });
   }
-
   try {
     const data = await sensorController.getSensorData(intervalHours);
     res.json(data);
   } catch (error) {
-    // Error is already logged in controller, just send a generic server error response
-    res.status(500).json({ message: error.message || 'Internal server error while fetching sensor data.' });
+    res.status(500).json({ message: error.message });
   }
 });
 
-// --- NEW ROUTE FOR SPECIFIC AVERAGE POWER CONSUMPTION ---
 // GET /api/avg-power-consumption
-// Fetches the average instantaneous power consumption over a specified period in minutes.
-// Query parameter: period (required, e.g., 1, 5, 10, 30)
 router.get('/avg-power-consumption', async (req, res) => {
   const periodMinutes = parseInt(req.query.period, 10);
-
-  // Validate periodMinutes
   if (isNaN(periodMinutes) || periodMinutes <= 0) {
-    return res.status(400).json({ message: 'Invalid period parameter. Must be a positive number.' });
+    return res.status(400).json({ message: 'Invalid period parameter.' });
   }
-
   try {
     const avgPower = await sensorController.getSpecificAveragePower(periodMinutes);
-    res.json({ avgPower: avgPower }); // Return as an object for clarity
+    res.json({ avgPower: avgPower }); 
   } catch (error) {
-    console.error('Error in /api/avg-power-consumption route:', error);
-    res.status(500).json({ message: error.message || 'Internal server error while fetching average power.' });
+    res.status(500).json({ message: error.message });
   }
+});
+
+// --- NEW ROUTE FOR ANDROID APP ---
+// GET /api/sensors/latest
+// Matches PowerSenseClient: client.get("$BASE_URL/api/sensors/latest")
+router.get('/sensors/latest', async (req, res) => {
+    try {
+        const data = await sensorController.getLatestSensorDataForAndroid();
+        res.json(data);
+    } catch (error) {
+        res.status(500).json({ message: "Failed to fetch android sensor data" });
+    }
+});
+
+// --- NEW ROUTE FOR RELAY LIST (Optional) ---
+// Matches PowerSenseClient: client.get("$BASE_URL/api/relays")
+// Since Android defines switches in Firestore, this just returns an empty list or the hardwired ones to prevent 404 errors.
+router.get('/relays', (req, res) => {
+    // We return the hardwired configuration so the client doesn't error out.
+    // The Android app mostly relies on Firestore for the list, so this is a fallback.
+    res.json([
+        { id: "1", name: "Living Room", description: "Main Light", isOn: false },
+        { id: "2", name: "Bedroom", description: "Fan", isOn: false }
+    ]);
 });
 
 module.exports = router;
