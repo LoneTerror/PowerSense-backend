@@ -1,5 +1,4 @@
 // backend/server.js
-
 const express = require('express');
 const cors = require('cors');
 const http = require('http');           
@@ -12,14 +11,8 @@ const sensorController = require('./controllers/sensorController');
 const app = express();
 const PORT = process.env.PORT || 5003; 
 
-// ==========================================
-//  CORS CONFIGURATION
-// ==========================================
-app.use(cors({
-    origin: true, 
-    credentials: true 
-}));
-
+// CORS
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json()); 
 app.use(express.static('public')); 
 
@@ -29,31 +22,16 @@ app.use((req, res, next) => {
     next();
 });
 
-// ==========================================
-//  SERVER SETUP
-// ==========================================
+// Server Setup
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// ==========================================
-//  WEBSOCKET & RELAY LOGIC
-// ==========================================
-
 let espSocket = null; 
-let deviceStatus = { 
-    r1: false, 
-    r2: false,
-    r1Start: null,
-    r2Start: null
-};
+let deviceStatus = { r1: false, r2: false, r1Start: null, r2Start: null };
 
-// --- BROADCAST FUNCTION ---
+// Broadcast function
 function broadcastStatus() {
-    const payload = JSON.stringify({
-        type: 'STATUS_UPDATE',
-        data: deviceStatus
-    });
-
+    const payload = JSON.stringify({ type: 'STATUS_UPDATE', data: deviceStatus });
     wss.clients.forEach(client => {
         if (client !== espSocket && client.readyState === WebSocket.OPEN) {
             client.send(payload);
@@ -61,7 +39,7 @@ function broadcastStatus() {
     });
 }
 
-// Heartbeat System
+// Heartbeat
 const interval = setInterval(function ping() {
     wss.clients.forEach(function each(ws) {
         if (ws.isAlive === false) return ws.terminate();
@@ -70,11 +48,9 @@ const interval = setInterval(function ping() {
     });
 }, 5000);
 
-wss.on('close', function close() {
-    clearInterval(interval);
-});
+wss.on('close', function close() { clearInterval(interval); });
 
-// WebSocket Handler
+// WebSocket Logic
 wss.on('connection', (ws, req) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     console.log(`[WebSocket] New Connection from: ${ip}`);
@@ -82,7 +58,7 @@ wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
-    // Send current status immediately to new web clients
+    // Send status to new clients immediately
     ws.send(JSON.stringify({ type: 'STATUS_UPDATE', data: deviceStatus }));
 
     ws.on('message', (message) => {
@@ -90,13 +66,11 @@ wss.on('connection', (ws, req) => {
             const msgStr = message.toString();
             const data = JSON.parse(msgStr);
 
-            // ======================================================
-            // 1. STATUS REPORT (Relay State)
-            // ======================================================
+            // 1. RELAY STATUS UPDATE
             if (data.type === 'STATUS') {
-                espSocket = ws; // Register ESP connection
-                
+                espSocket = ws; 
                 let changed = false;
+                
                 if (data.r1 !== deviceStatus.r1) {
                     deviceStatus.r1 = data.r1;
                     deviceStatus.r1Start = data.r1 ? Date.now() : null;
@@ -107,25 +81,16 @@ wss.on('connection', (ws, req) => {
                     deviceStatus.r2Start = data.r2 ? Date.now() : null;
                     changed = true;
                 }
-                
-                // If status changed, update the frontend
                 if (changed) broadcastStatus();
             }
-
-            // ======================================================
-            // 2. SENSOR DATA (Voltage, Current, Power)
-            // ======================================================
+            
+            // 2. SENSOR DATA STREAM
             else if (data.type === 'SENSOR_DATA') {
-                
-                // A. Save to Database
+                // Save to SQLite
                 sensorController.saveSensorData(data);
 
-                // B. Broadcast to Frontend (for live graph)
-                const livePayload = JSON.stringify({
-                    type: 'SENSOR_UPDATE',
-                    data: data
-                });
-                
+                // Broadcast live to Dashboard
+                const livePayload = JSON.stringify({ type: 'SENSOR_UPDATE', data: data });
                 wss.clients.forEach(client => {
                     if (client !== espSocket && client.readyState === WebSocket.OPEN) {
                         client.send(livePayload);
@@ -146,50 +111,34 @@ wss.on('connection', (ws, req) => {
     });
 });
 
-// ==========================================
-//  API ROUTES
-// ==========================================
-
+// Routes
 app.use('/api', sensorRoutes);
 
-// 2. Legacy Relay Status
-app.get('/api/status', (req, res) => {
-    res.json({ online: !!espSocket, data: deviceStatus });
-});
+// Legacy API Endpoints
+app.get('/api/status', (req, res) => res.json({ online: !!espSocket, data: deviceStatus }));
 
-// 3. Legacy Web Control (GET)
 app.get('/api/relay/:id/:action', (req, res) => {
     const { id, action } = req.params;
     handleRelayCommand(id, action === 'on', res);
 });
 
-// 4. ANDROID APP COMPATIBILITY (POST)
 app.post('/api/relays/:id/toggle', (req, res) => {
     const { id } = req.params;
     const { state } = req.body; 
-
-    if (typeof state !== 'boolean') {
-        return res.status(400).json({ error: "Invalid body. Expected { state: boolean }" });
-    }
-    
+    if (typeof state !== 'boolean') return res.status(400).json({ error: "Invalid body" });
     handleRelayCommand(id, state, res);
 });
 
-// --- Central Command Handler ---
+// Command Handler
 function handleRelayCommand(id, state, res) {
     if (!espSocket) return res.status(503).json({ error: "Device Offline" });
 
     let targetRelay = parseInt(id); 
-    if (isNaN(targetRelay)) {
-        console.warn(`[API] Warning: Received non-numeric Relay ID: ${id}`);
-    }
-
     const command = { type: 'COMMAND', relay: targetRelay, state: state };
 
     try {
         espSocket.send(JSON.stringify(command));
         
-        // Optimistic Update
         let changed = false;
         if (id == '1' && deviceStatus.r1 !== state) {
             deviceStatus.r1 = state;
@@ -202,7 +151,11 @@ function handleRelayCommand(id, state, res) {
             changed = true;
         }
 
-        if (changed) broadcastStatus();
+        if (changed) {
+            broadcastStatus();
+            // Log to SQLite
+            sensorController.logRelayActivity(targetRelay, state, 'App/Web');
+        }
 
         res.json({ success: true, newState: state });
     } catch (err) {
@@ -211,9 +164,7 @@ function handleRelayCommand(id, state, res) {
     }
 }
 
-app.get('/', (req, res) => {
-    res.send('PowerSense Unified Backend is Online!');
-});
+app.get('/', (req, res) => res.send('PowerSense Backend Online'));
 
 server.listen(PORT, () => {
     console.log(`PowerSense Backend running on port ${PORT}`);
