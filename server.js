@@ -6,7 +6,8 @@ const http = require('http');
 const WebSocket = require('ws');        
 require('dotenv').config();
 
-const sensorRoutes = require('./routes/sensor'); 
+const sensorRoutes = require('./routes/sensor');
+const sensorController = require('./controllers/sensorController');
 
 const app = express();
 const PORT = process.env.PORT || 5003; 
@@ -46,8 +47,7 @@ let deviceStatus = {
     r2Start: null
 };
 
-// --- BROADCAST FUNCTION (New) ---
-// Sends the latest status to all connected web/react clients
+// --- BROADCAST FUNCTION ---
 function broadcastStatus() {
     const payload = JSON.stringify({
         type: 'STATUS_UPDATE',
@@ -55,7 +55,6 @@ function broadcastStatus() {
     });
 
     wss.clients.forEach(client => {
-        // Don't send to the ESP itself, only to browsers/apps
         if (client !== espSocket && client.readyState === WebSocket.OPEN) {
             client.send(payload);
         }
@@ -83,22 +82,19 @@ wss.on('connection', (ws, req) => {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
-    // Identify if this is the ESP8266 or a Web Client
-    // Simple heuristic: ESP usually doesn't send browser headers, or you can add a protocol check
-    // For now, we assume the first message identifies it, or we treat the one sending 'STATUS' updates as ESP.
-    
     // Send current status immediately to new web clients
     ws.send(JSON.stringify({ type: 'STATUS_UPDATE', data: deviceStatus }));
 
     ws.on('message', (message) => {
         try {
             const msgStr = message.toString();
-            // console.log(`[WS Msg] ${msgStr}`);
             const data = JSON.parse(msgStr);
 
-            // 1. If message is from ESP (Status Report)
+            // ======================================================
+            // 1. STATUS REPORT (Relay State)
+            // ======================================================
             if (data.type === 'STATUS') {
-                espSocket = ws; // Register this connection as the ESP
+                espSocket = ws; // Register ESP connection
                 
                 let changed = false;
                 if (data.r1 !== deviceStatus.r1) {
@@ -112,10 +108,34 @@ wss.on('connection', (ws, req) => {
                     changed = true;
                 }
                 
-                // If ESP reports a change, tell React Frontend!
+                // If status changed, update the frontend
                 if (changed) broadcastStatus();
             }
-        } catch (e) { console.error(`[Error] Bad JSON or Logic: ${e.message}`); }
+
+            // ======================================================
+            // 2. SENSOR DATA (Voltage, Current, Power)
+            // ======================================================
+            else if (data.type === 'SENSOR_DATA') {
+                
+                // A. Save to Database
+                sensorController.saveSensorData(data);
+
+                // B. Broadcast to Frontend (for live graph)
+                const livePayload = JSON.stringify({
+                    type: 'SENSOR_UPDATE',
+                    data: data
+                });
+                
+                wss.clients.forEach(client => {
+                    if (client !== espSocket && client.readyState === WebSocket.OPEN) {
+                        client.send(livePayload);
+                    }
+                });
+            }
+
+        } catch (e) { 
+            console.error(`[Error] Bad JSON or Logic: ${e.message}`); 
+        }
     });
 
     ws.on('close', () => {
@@ -134,7 +154,6 @@ app.use('/api', sensorRoutes);
 
 // 2. Legacy Relay Status
 app.get('/api/status', (req, res) => {
-    // Return status even if ESP is offline, so UI doesn't break
     res.json({ online: !!espSocket, data: deviceStatus });
 });
 
@@ -163,7 +182,6 @@ function handleRelayCommand(id, state, res) {
     let targetRelay = parseInt(id); 
     if (isNaN(targetRelay)) {
         console.warn(`[API] Warning: Received non-numeric Relay ID: ${id}`);
-        // If your React app uses strings like "light1", map them here
     }
 
     const command = { type: 'COMMAND', relay: targetRelay, state: state };
@@ -184,7 +202,6 @@ function handleRelayCommand(id, state, res) {
             changed = true;
         }
 
-        // Notify React Frontend of the change triggered by Android/API
         if (changed) broadcastStatus();
 
         res.json({ success: true, newState: state });

@@ -114,3 +114,27 @@ exports.getLatestSensorDataForAndroid = async () => {
         throw error;
     }
 };
+
+
+exports.saveSensorData = async (data) => {
+  try {
+    const query = `
+      INSERT INTO sensor_data 
+      (voltage_val, current_val, inst_power_val, avg_current_val, avg_power_val)
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+
+    const values = [
+      data.voltage, 
+      data.current, 
+      data.power, 
+      data.avg_current, 
+      data.avg_power
+    ];
+
+    await pool.query(query, values);
+    // console.log('Data saved to existing sensor_data table'); 
+  } catch (error) {
+    console.error('Error saving to DB:', error.message);
+  }
+};
