@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,23 +8,33 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
-            background-color: #121212; color: #fff; font-family: 'Segoe UI', sans-serif;
-            margin: 0; padding: 20px;
+            background-color: #121212;
+            color: #fff;
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 20px;
             min-height: 100vh;
-            display: flex; justify-content: center; align-items: flex-start;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
         }
 
         /* Layout Container */
         .main-container {
-            display: flex; flex-direction: row; gap: 30px;
-            width: 100%; max-width: 1000px;
+            display: flex;
+            flex-direction: row;
+            gap: 30px;
+            width: 100%;
+            max-width: 1000px;
             align-items: flex-start;
         }
 
         /* Left Column: Controls & Chart */
         .left-column {
             flex: 2;
-            display: flex; flex-direction: column; align-items: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         /* Right Column: Activity Log */
@@ -32,96 +43,220 @@
             background: #1e1e1e;
             border-radius: 20px;
             padding: 20px;
-            height: 500px; /* Fixed height for scrolling */
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            display: flex; flex-direction: column;
+            height: 500px;
+            /* Fixed height for scrolling */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
         }
 
         /* Mobile Responsiveness */
         @media (max-width: 768px) {
-            .main-container { flex-direction: column; align-items: center; }
-            .right-column { width: 90%; height: 300px; }
-            .left-column { width: 100%; }
+            .main-container {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .right-column {
+                width: 90%;
+                height: 300px;
+            }
+
+            .left-column {
+                width: 100%;
+            }
         }
 
         /* Card Styles */
         .card {
-            background: #1e1e1e; padding: 2rem; border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 300px; text-align: center;
-            margin-bottom: 20px; z-index: 10;
+            background: #1e1e1e;
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            width: 300px;
+            text-align: center;
+            margin-bottom: 20px;
+            z-index: 10;
         }
-        h2 { margin: 0 0 10px 0; color: #00e676; letter-spacing: 1px; }
-        h3 { margin: 0 0 15px 0; color: #bbb; font-size: 1.1rem; border-bottom: 1px solid #333; padding-bottom: 10px;}
-        .status { margin-bottom: 20px; font-size: 0.85rem; font-weight: bold; }
-        
+
+        h2 {
+            margin: 0 0 10px 0;
+            color: #00e676;
+            letter-spacing: 1px;
+        }
+
+        h3 {
+            margin: 0 0 15px 0;
+            color: #bbb;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+
+        .status {
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
         .row {
-            display: flex; justify-content: space-between; align-items: center;
-            background: #2a2a2a; padding: 15px 20px; margin: 10px 0; border-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #2a2a2a;
+            padding: 15px 20px;
+            margin: 10px 0;
+            border-radius: 12px;
         }
-        
+
         /* Timer Styles */
-        .timer { font-family: 'Courier New', monospace; font-size: 0.9rem; color: #00e676; transition: opacity 0.3s; }
-        .timer.hidden { display: none; }
+        .timer {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #00e676;
+            transition: opacity 0.3s;
+        }
+
+        .timer.hidden {
+            display: none;
+        }
 
         /* Chart Wrapper (The Outer Box) */
         .chart-wrapper {
-            width: 100%; max-width: 600px; 
-            max-height: 0; opacity: 0; overflow: hidden;
+            width: 100%;
+            max-width: 600px;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
             transition: max-height 0.6s ease-out, opacity 0.4s ease-in, margin 0.4s;
-            border-radius: 15px; background: #1e1e1e; margin-top: 0;
+            border-radius: 15px;
+            background: #1e1e1e;
+            margin-top: 0;
         }
+
         .chart-wrapper.visible {
-            max-height: 500px; opacity: 1; padding: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            max-height: 500px;
+            opacity: 1;
+            padding: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             margin-top: 10px;
         }
-        
+
         /* The Canvas Container (Crucial for Chart.js Sizing) */
         .canvas-container {
             position: relative;
-            height: 300px; /* Force explicit height so it doesn't collapse */
+            height: 300px;
+            /* Force explicit height so it doesn't collapse */
             width: 100%;
         }
-        
+
         /* Log List Styles */
         .log-list {
             flex-grow: 1;
             overflow-y: auto;
             list-style: none;
-            padding: 0; margin: 0;
+            padding: 0;
+            margin: 0;
             font-size: 0.9rem;
         }
+
         .log-item {
             padding: 10px;
             border-bottom: 1px solid #333;
             color: #ccc;
             animation: fadeIn 0.5s;
         }
-        .log-item span.device { color: #00e676; font-weight: bold; }
-        .log-item span.action-on { color: #00e676; }
-        .log-item span.action-off { color: #ff5252; }
-        .log-item span.time { color: #888; font-size: 0.8rem; display: block; margin-top: 4px; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .log-item span.device {
+            color: #00e676;
+            font-weight: bold;
+        }
+
+        .log-item span.action-on {
+            color: #00e676;
+        }
+
+        .log-item span.action-off {
+            color: #ff5252;
+        }
+
+        .log-item span.time {
+            color: #888;
+            font-size: 0.8rem;
+            display: block;
+            margin-top: 4px;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
 
         /* Scrollbar Styling */
-        .log-list::-webkit-scrollbar { width: 6px; }
-        .log-list::-webkit-scrollbar-thumb { background-color: #444; border-radius: 3px; }
-        
+        .log-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .log-list::-webkit-scrollbar-thumb {
+            background-color: #444;
+            border-radius: 3px;
+        }
+
         /* Switch CSS */
-        .switch { position: relative; display: inline-block; width: 46px; height: 26px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 26px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
         .slider {
-            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #444; transition: .3s; border-radius: 34px;
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #444;
+            transition: .3s;
+            border-radius: 34px;
         }
+
         .slider:before {
-            position: absolute; content: ""; height: 18px; width: 18px;
-            left: 4px; bottom: 4px; background-color: white; transition: .3s; border-radius: 50%;
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
         }
-        input:checked + .slider { background-color: #00e676; }
-        input:checked + .slider:before { transform: translateX(20px); }
+
+        input:checked+.slider {
+            background-color: #00e676;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
     </style>
 </head>
+
 <body>
 
     <div class="main-container">
@@ -134,7 +269,8 @@
                 <!-- Relay 1 -->
                 <div class="row">
                     <div style="text-align:left;">
-                        <div>Living Room</div>
+                        <div id="name1" style="font-weight:bold; color:#fff;">Relay 1</div>
+                        <div id="desc1" style="font-size:0.8rem; color:#888;">Loading...</div>
                         <div id="timer1" class="timer hidden">00:00:00</div>
                     </div>
                     <label class="switch">
@@ -146,7 +282,8 @@
                 <!-- Relay 2 -->
                 <div class="row">
                     <div style="text-align:left;">
-                        <div>Bedroom</div>
+                        <div id="name2" style="font-weight:bold; color:#fff;">Relay 2</div>
+                        <div id="desc2" style="font-size:0.8rem; color:#888;">Loading...</div>
                         <div id="timer2" class="timer hidden">00:00:00</div>
                     </div>
                     <label class="switch">
@@ -154,214 +291,235 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-            </div>
 
-            <!-- Live Graph Container -->
-            <div id="chartWrapper" class="chart-wrapper">
-                <div class="canvas-container">
-                    <canvas id="liveChart"></canvas>
+                <!-- Live Graph Container -->
+                <div id="chartWrapper" class="chart-wrapper">
+                    <div class="canvas-container">
+                        <canvas id="liveChart"></canvas>
+                    </div>
                 </div>
             </div>
+
+            <!-- RIGHT COLUMN -->
+            <div class="right-column">
+                <h3>Activity History</h3>
+                <ul id="logList" class="log-list">
+                    <li class="log-item" style="text-align: center; color: #555; border: none;">Waiting for activity...
+                    </li>
+                </ul>
+            </div>
         </div>
 
-        <!-- RIGHT COLUMN -->
-        <div class="right-column">
-            <h3>Activity History</h3>
-            <ul id="logList" class="log-list">
-                <li class="log-item" style="text-align: center; color: #555; border: none;">Waiting for activity...</li>
-            </ul>
-        </div>
-    </div>
+        <script>
+            // CONFIGURATION: Set the full backend URL for Preview and Production compatibility
+            const API_BASE = "https://backend.powersense.site";
 
-    <script>
-        // CONFIGURATION: Set the full backend URL for Preview and Production compatibility
-        const API_BASE = "https://backend.powersense.site";
+            // --- SOUND CONFIGURATION ---
+            // Ensure 'switch-on.mp3' and 'switch-off.mp3' exist in the same public/ folder
+            const soundOn = new Audio('switch_on.mp3');
+            const soundOff = new Audio('switch_off.mp3');
 
-        // --- SOUND CONFIGURATION ---
-        // Ensure 'switch-on.mp3' and 'switch-off.mp3' exist in the same public/ folder
-        const soundOn = new Audio('switch_on.mp3'); 
-        const soundOff = new Audio('switch_off.mp3'); 
+            const statusMsg = document.getElementById('statusMsg');
+            const chartWrapper = document.getElementById('chartWrapper');
+            const logList = document.getElementById('logList');
 
-        const statusMsg = document.getElementById('statusMsg');
-        const chartWrapper = document.getElementById('chartWrapper');
-        const logList = document.getElementById('logList');
-        
-        let isInteracting = false;
-        let r1Start = null;
-        let r2Start = null;
-        
-        let prevR1State = null;
-        let prevR2State = null; 
+            let isInteracting = false;
+            let r1Start = null;
+            let r2Start = null;
 
-        // --- CHART SETUP ---
-        const ctx = document.getElementById('liveChart').getContext('2d');
-        const liveChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [], 
-                datasets: [
-                    { label: 'Living Room', data: [], borderColor: '#00e676', backgroundColor: '#00e676', stepped: 'before', tension: 0, pointRadius: 0, borderWidth: 2 },
-                    { label: 'Bedroom', data: [], borderColor: '#29b6f6', backgroundColor: '#29b6f6', stepped: 'before', tension: 0, pointRadius: 0, borderWidth: 2 }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false, // Important: Allows chart to fit our custom height
-                animation: false,
-                interaction: { intersect: false },
-                scales: {
-                    x: { ticks: { color: '#888' }, grid: { color: '#333' } },
-                    y: { 
-                        min: 0, max: 1.2, 
-                        ticks: { stepSize: 1, callback: v => v===1?'ON':(v===0?'OFF':''), color: '#888' },
-                        grid: { color: '#333' }
-                    }
+            let prevR1State = null;
+            let prevR2State = null;
+
+            // --- CHART SETUP ---
+            const ctx = document.getElementById('liveChart').getContext('2d');
+            const liveChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Living Room', data: [], borderColor: '#00e676', backgroundColor: '#00e676', stepped: 'before', tension: 0, pointRadius: 0, borderWidth: 2 },
+                        { label: 'Bedroom', data: [], borderColor: '#29b6f6', backgroundColor: '#29b6f6', stepped: 'before', tension: 0, pointRadius: 0, borderWidth: 2 }
+                    ]
                 },
-                plugins: { legend: { labels: { color: '#fff' } } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // Important: Allows chart to fit our custom height
+                    animation: false,
+                    interaction: { intersect: false },
+                    scales: {
+                        x: { ticks: { color: '#888' }, grid: { color: '#333' } },
+                        y: {
+                            min: 0, max: 1.2,
+                            ticks: { stepSize: 1, callback: v => v === 1 ? 'ON' : (v === 0 ? 'OFF' : ''), color: '#888' },
+                            grid: { color: '#333' }
+                        }
+                    },
+                    plugins: { legend: { labels: { color: '#fff' } } }
+                }
+            });
+
+            // --- TIMER UPDATE LOOP ---
+            setInterval(() => {
+                updateTimer('timer1', r1Start);
+                updateTimer('timer2', r2Start);
+            }, 1000);
+
+            function updateTimer(elementId, startTime) {
+                const el = document.getElementById(elementId);
+                if (!startTime) {
+                    el.classList.add('hidden');
+                    return;
+                }
+                el.classList.remove('hidden');
+                const diff = Math.floor((Date.now() - startTime) / 1000);
+                const h = Math.floor(diff / 3600).toString().padStart(2, '0');
+                const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
+                const s = (diff % 60).toString().padStart(2, '0');
+                el.innerText = `${h}:${m}:${s}`;
             }
-        });
 
-        // --- TIMER UPDATE LOOP ---
-        setInterval(() => {
-            updateTimer('timer1', r1Start);
-            updateTimer('timer2', r2Start);
-        }, 1000);
+            function logAction(device, action) {
+                if (logList.firstElementChild && logList.firstElementChild.innerText.includes("Waiting")) {
+                    logList.innerHTML = '';
+                }
 
-        function updateTimer(elementId, startTime) {
-            const el = document.getElementById(elementId);
-            if (!startTime) {
-                el.classList.add('hidden');
-                return;
-            }
-            el.classList.remove('hidden');
-            const diff = Math.floor((Date.now() - startTime) / 1000);
-            const h = Math.floor(diff / 3600).toString().padStart(2, '0');
-            const m = Math.floor((diff % 3600) / 60).toString().padStart(2, '0');
-            const s = (diff % 60).toString().padStart(2, '0');
-            el.innerText = `${h}:${m}:${s}`;
-        }
+                const li = document.createElement('li');
+                li.className = 'log-item';
 
-        function logAction(device, action) {
-            if (logList.firstElementChild && logList.firstElementChild.innerText.includes("Waiting")) {
-                logList.innerHTML = '';
-            }
+                const now = new Date();
+                const timeString = now.toLocaleTimeString();
+                const actionClass = action === "turned on" ? "action-on" : "action-off";
 
-            const li = document.createElement('li');
-            li.className = 'log-item';
-            
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
-            const actionClass = action === "turned on" ? "action-on" : "action-off";
-
-            li.innerHTML = `
+                li.innerHTML = `
                 <span class="device">${device}</span> <span class="${actionClass}">${action}</span>
                 <span class="time">${timeString}</span>
             `;
-            
-            logList.insertBefore(li, logList.firstChild);
-        }
 
-        async function syncState() {
-            try {
-                const res = await fetch(`${API_BASE}/api/status`);
-                const json = await res.json();
+                logList.insertBefore(li, logList.firstChild);
+            }
 
-                if (json.online) {
-                    statusMsg.innerText = "ONLINE - READY";
-                    statusMsg.style.color = "#00e676";
-                } else {
-                    statusMsg.innerText = "DEVICE OFFLINE";
+            async function syncState() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/status`);
+                    const json = await res.json();
+
+                    if (json.online) {
+                        statusMsg.innerText = "ONLINE - READY";
+                        statusMsg.style.color = "#00e676";
+                    } else {
+                        statusMsg.innerText = "DEVICE OFFLINE";
+                        statusMsg.style.color = "#ff4444";
+                    }
+
+                    if (!isInteracting) {
+                        const r1El = document.getElementById('r1');
+                        const r2El = document.getElementById('r2');
+                        if (r1El.checked !== json.data.r1) r1El.checked = json.data.r1;
+                        if (r2El.checked !== json.data.r2) r2El.checked = json.data.r2;
+                    }
+
+                    if (prevR1State !== null) {
+                        if (!prevR1State && json.data.r1) logAction("Living Room", "turned on");
+                        if (prevR1State && !json.data.r1) logAction("Living Room", "turned off");
+                    }
+                    if (prevR2State !== null) {
+                        if (!prevR2State && json.data.r2) logAction("Bedroom", "turned on");
+                        if (prevR2State && !json.data.r2) logAction("Bedroom", "turned off");
+                    }
+
+                    r1Start = json.data.r1Start;
+                    r2Start = json.data.r2Start;
+                    prevR1State = json.data.r1;
+                    prevR2State = json.data.r2;
+
+                    updateChartVisibility(json.data.r1, json.data.r2);
+                    updateGraph(json.data.r1, json.data.r2);
+
+                } catch (e) {
+                    console.error(e);
+                    statusMsg.innerText = "SERVER ERROR";
                     statusMsg.style.color = "#ff4444";
                 }
+            }
 
-                if (!isInteracting) {
-                    const r1El = document.getElementById('r1');
-                    const r2El = document.getElementById('r2');
-                    if (r1El.checked !== json.data.r1) r1El.checked = json.data.r1;
-                    if (r2El.checked !== json.data.r2) r2El.checked = json.data.r2;
+            function updateChartVisibility(r1State, r2State) {
+                if (r1State || r2State) {
+                    chartWrapper.classList.add('visible');
+                } else {
+                    chartWrapper.classList.remove('visible');
+                }
+            }
+
+            function updateGraph(r1State, r2State) {
+                const now = new Date();
+                const timeLabel = now.getHours() + ':' + now.getMinutes() + ':' + now.getSeconds();
+
+                liveChart.data.labels.push(timeLabel);
+                liveChart.data.datasets[0].data.push(r1State ? 1 : 0);
+                liveChart.data.datasets[1].data.push(r2State ? 1 : 0);
+
+                if (liveChart.data.labels.length > 20) {
+                    liveChart.data.labels.shift();
+                    liveChart.data.datasets[0].data.shift();
+                    liveChart.data.datasets[1].data.shift();
+                }
+                liveChart.update();
+            }
+
+            // Add this inside the script tag
+            async function fetchConfig() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/relays/config`);
+                    const data = await res.json();
+                    data.forEach(relay => {
+                        const nameEl = document.getElementById(`name${relay.id}`);
+                        const descEl = document.getElementById(`desc${relay.id}`);
+                        if (nameEl) nameEl.innerText = relay.name;
+                        if (descEl) descEl.innerText = relay.description;
+                    });
+                } catch (e) {
+                    console.warn("Could not fetch relay names");
+                }
+            }
+
+            // Call it on load
+            fetchConfig();
+            setInterval(fetchConfig, 10000); // Refresh names every 10s
+
+            async function toggle(id, el) {
+                isInteracting = true;
+                const action = el.checked ? 'on' : 'off';
+
+                // Play Sound Logic
+                if (action === 'on') {
+                    soundOn.currentTime = 0;
+                    soundOn.play().catch(e => console.warn("Audio play failed:", e));
+                } else {
+                    soundOff.currentTime = 0;
+                    soundOff.play().catch(e => console.warn("Audio play failed:", e));
                 }
 
-                if (prevR1State !== null) {
-                    if (!prevR1State && json.data.r1) logAction("Living Room", "turned on");
-                    if (prevR1State && !json.data.r1) logAction("Living Room", "turned off");
-                }
-                if (prevR2State !== null) {
-                    if (!prevR2State && json.data.r2) logAction("Bedroom", "turned on");
-                    if (prevR2State && !json.data.r2) logAction("Bedroom", "turned off");
-                }
+                const r1 = document.getElementById('r1').checked;
+                const r2 = document.getElementById('r2').checked;
+                updateChartVisibility(r1, r2);
 
-                r1Start = json.data.r1Start;
-                r2Start = json.data.r2Start;
-                prevR1State = json.data.r1;
-                prevR2State = json.data.r2;
-
-                updateChartVisibility(json.data.r1, json.data.r2);
-                updateGraph(json.data.r1, json.data.r2);
-
-            } catch (e) {
-                console.error(e);
-                statusMsg.innerText = "SERVER ERROR";
-                statusMsg.style.color = "#ff4444";
-            }
-        }
-
-        function updateChartVisibility(r1State, r2State) {
-            if (r1State || r2State) {
-                chartWrapper.classList.add('visible');
-            } else {
-                chartWrapper.classList.remove('visible');
-            }
-        }
-
-        function updateGraph(r1State, r2State) {
-            const now = new Date();
-            const timeLabel = now.getHours() + ':' + now.getMinutes() + ':' + now.getSeconds();
-
-            liveChart.data.labels.push(timeLabel);
-            liveChart.data.datasets[0].data.push(r1State ? 1 : 0);
-            liveChart.data.datasets[1].data.push(r2State ? 1 : 0);
-
-            if (liveChart.data.labels.length > 20) {
-                liveChart.data.labels.shift();
-                liveChart.data.datasets[0].data.shift();
-                liveChart.data.datasets[1].data.shift();
-            }
-            liveChart.update();
-        }
-
-        async function toggle(id, el) {
-            isInteracting = true;
-            const action = el.checked ? 'on' : 'off';
-            
-            // Play Sound Logic
-            if (action === 'on') {
-                soundOn.currentTime = 0;
-                soundOn.play().catch(e => console.warn("Audio play failed:", e));
-            } else {
-                soundOff.currentTime = 0;
-                soundOff.play().catch(e => console.warn("Audio play failed:", e));
-            }
-
-            const r1 = document.getElementById('r1').checked;
-            const r2 = document.getElementById('r2').checked;
-            updateChartVisibility(r1, r2);
-
-            try {
-                const res = await fetch(`${API_BASE}/api/relay/${id}/${action}`);
-                const json = await res.json();
-                if (!json.success) {
+                try {
+                    const res = await fetch(`${API_BASE}/api/relay/${id}/${action}`);
+                    const json = await res.json();
+                    if (!json.success) {
+                        el.checked = !el.checked;
+                        alert("Device did not respond");
+                    }
+                } catch (e) {
                     el.checked = !el.checked;
-                    alert("Device did not respond");
+                } finally {
+                    setTimeout(() => { isInteracting = false; }, 500);
                 }
-            } catch (e) {
-                el.checked = !el.checked;
-            } finally {
-                setTimeout(() => { isInteracting = false; }, 500);
             }
-        }
 
-        setInterval(syncState, 2000);
-        syncState();
-    </script>
+            setInterval(syncState, 2000);
+            syncState();
+        </script>
 </body>
+
 </html>
