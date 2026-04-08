@@ -1,35 +1,38 @@
-// backend/server.js
 const express = require('express');
 const cors = require('cors');
-const http = require('http');           
-const WebSocket = require('ws');        
+const http = require('http');
+const WebSocket = require('ws');
 require('dotenv').config();
 
 const sensorRoutes = require('./routes/sensor');
 const sensorController = require('./controllers/sensorController');
 
 const app = express();
-const PORT = process.env.PORT || 5003; 
+const PORT = process.env.PORT || 5003;
 
-// CORS
+// --- MIDDLEWARE ---
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json()); 
-app.use(express.static('public')); 
+app.use(express.json());
+app.use(express.static('public'));
 
+// Request Logger
 app.use((req, res, next) => {
     const origin = req.headers.origin || req.headers.host || 'Unknown';
-    console.log(`[Req] ${req.method} ${req.url} | Origin: ${origin}`);
+    console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.url} | Origin: ${origin}`);
     next();
 });
 
-// Server Setup
+// --- SERVER & WEBSOCKET SETUP ---
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-let espSocket = null; 
+let espSocket = null; // Pointer to the ESP8266 connection
 let deviceStatus = { r1: false, r2: false, r1Start: null, r2Start: null };
 
-// Broadcast function
+/**
+ * Syncs all connected clients (Web/Android) with the latest relay states.
+ * Excludes the ESP8266 itself to prevent command loops.
+ */
 function broadcastStatus() {
     const payload = JSON.stringify({ type: 'STATUS_UPDATE', data: deviceStatus });
     wss.clients.forEach(client => {
@@ -39,38 +42,37 @@ function broadcastStatus() {
     });
 }
 
-// Heartbeat
-const interval = setInterval(function ping() {
-    wss.clients.forEach(function each(ws) {
+// WebSocket Heartbeat (Cleanup dead connections every 5s)
+const interval = setInterval(() => {
+    wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate();
         ws.isAlive = false;
         ws.ping();
     });
 }, 5000);
 
-wss.on('close', function close() { clearInterval(interval); });
+wss.on('close', () => clearInterval(interval));
 
-// WebSocket Logic
+// --- WEBSOCKET EVENT LOGIC ---
 wss.on('connection', (ws, req) => {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    console.log(`[WebSocket] New Connection from: ${ip}`);
-    
+    console.log(`📡 New WebSocket connection from: ${ip}`);
+
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
-    // Send status to new clients immediately
+    // Send immediate state to new client
     ws.send(JSON.stringify({ type: 'STATUS_UPDATE', data: deviceStatus }));
 
-    ws.on('message', (message) => {
+    ws.on('message', async (message) => {
         try {
-            const msgStr = message.toString();
-            const data = JSON.parse(msgStr);
+            const data = JSON.parse(message.toString());
 
-            // 1. RELAY STATUS UPDATE
+            // 1. HARDWARE STATUS UPDATE (From ESP8266)
             if (data.type === 'STATUS') {
                 espSocket = ws; 
                 let changed = false;
-                
+
                 if (data.r1 !== deviceStatus.r1) {
                     deviceStatus.r1 = data.r1;
                     deviceStatus.r1Start = data.r1 ? Date.now() : null;
@@ -81,15 +83,18 @@ wss.on('connection', (ws, req) => {
                     deviceStatus.r2Start = data.r2 ? Date.now() : null;
                     changed = true;
                 }
-                if (changed) broadcastStatus();
+                if (changed) {
+                    console.log(`🔄 State Change: R1:${deviceStatus.r1} R2:${deviceStatus.r2}`);
+                    broadcastStatus();
+                }
             }
-            
-            // 2. SENSOR DATA STREAM
-            else if (data.type === 'SENSOR_DATA') {
-                // Save to SQLite
-                sensorController.saveSensorData(data);
 
-                // Broadcast live to Dashboard
+            // 2. SENSOR DATA STREAM (From ESP8266)
+            else if (data.type === 'SENSOR_DATA') {
+                // Persistent storage (Async fire-and-forget)
+                sensorController.saveSensorData(data).catch(e => console.error("❌ DB Write Error:", e));
+
+                // Real-time broadcast to Dashboard/App
                 const livePayload = JSON.stringify({ type: 'SENSOR_UPDATE', data: data });
                 wss.clients.forEach(client => {
                     if (client !== espSocket && client.readyState === WebSocket.OPEN) {
@@ -98,47 +103,51 @@ wss.on('connection', (ws, req) => {
                 });
             }
 
-        } catch (e) { 
-            console.error(`[Error] Bad JSON or Logic: ${e.message}`); 
+        } catch (e) {
+            console.error(`⚠️ [WS Error] Protocol violation: ${e.message}`);
         }
     });
 
     ws.on('close', () => {
         if (espSocket === ws) {
-            console.log('[WebSocket] ESP8266 Disconnected');
+            console.log('🔌 ESP8266 Disconnected');
             espSocket = null;
         }
     });
 });
 
-// Routes
+// --- HTTP API ROUTES ---
 app.use('/api', sensorRoutes);
 
-// Legacy API Endpoints
+// Get real-time device health
 app.get('/api/status', (req, res) => res.json({ online: !!espSocket, data: deviceStatus }));
 
+// Legacy/Simple Relay Control
 app.get('/api/relay/:id/:action', (req, res) => {
     const { id, action } = req.params;
     handleRelayCommand(id, action === 'on', res);
 });
 
+// Standard Toggle Endpoint (Used by Android)
 app.post('/api/relays/:id/toggle', (req, res) => {
     const { id } = req.params;
-    const { state } = req.body; 
-    if (typeof state !== 'boolean') return res.status(400).json({ error: "Invalid body" });
+    const { state } = req.body;
+    if (typeof state !== 'boolean') return res.status(400).json({ error: "State must be boolean" });
     handleRelayCommand(id, state, res);
 });
 
-// Command Handler
+// --- CORE COMMAND HANDLER ---
 function handleRelayCommand(id, state, res) {
-    if (!espSocket) return res.status(503).json({ error: "Device Offline" });
+    if (!espSocket) {
+        return res.status(503).json({ error: "Hardware device (ESP8266) is offline" });
+    }
 
-    let targetRelay = parseInt(id); 
-    const command = { type: 'COMMAND', relay: targetRelay, state: state };
+    const targetRelay = parseInt(id);
+    const command = JSON.stringify({ type: 'COMMAND', relay: targetRelay, state: state });
 
     try {
-        espSocket.send(JSON.stringify(command));
-        
+        espSocket.send(command);
+
         let changed = false;
         if (id == '1' && deviceStatus.r1 !== state) {
             deviceStatus.r1 = state;
@@ -153,19 +162,20 @@ function handleRelayCommand(id, state, res) {
 
         if (changed) {
             broadcastStatus();
-            // Log to SQLite
-            sensorController.logRelayActivity(targetRelay, state, 'App/Web');
+            // Log to Database using the unified query interface
+            sensorController.logRelayActivity(targetRelay, state, 'App/Web')
+                .catch(err => console.error("❌ Activity Log Error:", err.message));
         }
 
         res.json({ success: true, newState: state });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Transmission Failed" });
+        console.error("❌ Transmission error:", err.message);
+        res.status(500).json({ error: "Failed to send command to device" });
     }
 }
 
-app.get('/', (req, res) => res.send('PowerSense Backend Online'));
+app.get('/', (req, res) => res.send('⚡ PowerSense Backend is Online'));
 
 server.listen(PORT, () => {
-    console.log(`PowerSense Backend running on port ${PORT}`);
+    console.log(`🚀 PowerSense Server active on port ${PORT} [DB Mode: ${process.env.DB_TYPE || 'SQLITE'}]`);
 });
