@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const db = require('./config/db');
 const http = require('http');
 const WebSocket = require('ws');
 require('dotenv').config();
@@ -176,6 +177,8 @@ function handleRelayCommand(id, state, res) {
 
 app.get('/', (req, res) => res.send('⚡ PowerSense Backend is Online'));
 
-server.listen(PORT, () => {
-    console.log(`🚀 PowerSense Server active on port ${PORT} [DB Mode: ${process.env.DB_TYPE || 'SQLITE'}]`);
+server.listen(PORT, async () => {
+    // Call it here to ensure DB is ready before clients connect
+    await db.initDB(); 
+    console.log(`🚀 PowerSense Server active on port ${PORT}`);
 });
